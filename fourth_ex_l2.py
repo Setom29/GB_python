@@ -1,4 +1,4 @@
-test_list = input().split(' ')
+test_list = input('Введите строку: ').split(' ')
 for index, string in enumerate(test_list):
     if len(string) > 10:
         string = string[0:10]
