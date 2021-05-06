@@ -1,7 +1,7 @@
 def person_info(name, surname, y_of_birth, city, email, tel):
     """Функция выводит данные о пользователе в одну строку
 
-    Именные переменные:
+    Именованные аргументы:
     name -- имя
     surname -- фамилия
     y_of_birth -- год рождения

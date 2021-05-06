@@ -8,4 +8,4 @@ def my_func(a, b, c):
     print(a + b + c - min(a, b, c))
 
 
-my_func(-1, 2, 3)
+my_func(1, 2, 3)

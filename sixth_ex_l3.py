@@ -1,14 +1,16 @@
 def int_func(string):
-    """принимает слова из маленьких латинских букв
-    и возвращает их же, но с прописной первой буквой
-
-    Позиционные аргументы:
-    string -- строка из маленьких латинских букв
-
-    """
-    return string.title()
+    flag = True
+    for letter in string:
+        if ord(letter) > 122 or ord(letter) < 97:
+            flag = False
+    if flag:
+        return string.title()
 
 
 word_list = input('Введите строку слов: ').split(' ')
+output_list = []
 for item in word_list:
-    print(int_func(item), end=' ')
+    item = int_func(item)
+    if item is not None:
+        output_list.append(item)
+print(*output_list)
