@@ -11,7 +11,7 @@ try:
                 n += 1
     firm_av_prof_dict['average_profit'] = av_prof / n
     firms_plus_av_prof_dict = [firm_dict, firm_av_prof_dict]
-    with open('json_file_ex7.json', 'w') as wf:
-        json.dump(firms_plus_av_prof_dict, wf)
+    with open('json_file_ex7.json', 'w', encoding='utf-8') as wf:
+        json.dump(firms_plus_av_prof_dict, wf, indent=3, ensure_ascii=False)
 except Exception as err:
     print(err)
