@@ -9,3 +9,4 @@ try:
         print(f'Количество строк = {line_counter}, \nа количество слов во всем файле = {word_counter}')
 except Exception as err:
     print(err)
+ 
