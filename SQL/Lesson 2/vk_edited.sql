@@ -89,11 +89,32 @@ CREATE TABLE media (
 	FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE TABLE likes (  -- таблица лайков медиафайлов
+-- CREATE TABLE likes (  -- таблица лайков медиафайлов
+-- id SERIAL PRIMARY KEY,
+-- user_id BIGINT UNSIGNED NOT NULL,
+-- media_id BIGINT UNSIGNED NOT NULL,
+-- KEY (user_id),
+-- FOREIGN KEY (user_id) REFERENCES users(id),
+-- FOREIGN KEY (media_id) REFERENCES media(id)
+-- );
+
+CREATE TABLE posts (
 id SERIAL PRIMARY KEY,
 user_id BIGINT UNSIGNED NOT NULL,
-media_id BIGINT UNSIGNED NOT NULL,
-KEY (user_id),
-FOREIGN KEY (user_id) REFERENCES users(id),
-FOREIGN KEY (media_id) REFERENCES media(id)
+txt TEXT NOT NULL,
+created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+INDEX user_idx (user_id),
+CONSTRAINT user_posts_fk FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE posts_likes (
+post_id BIGINT UNSIGNED NOT NULL,
+user_id BIGINT UNSIGNED NOT NULL,
+like_type BOOLEAN DEFAULT TRUE,
+PRIMARY KEY (post_id, user_id),
+INDEX post_idx (post_id),
+INDEX user_idx (user_id),
+CONSTRAINT posts_likes_fk FOREIGN KEY (post_id) REFERENCES posts(id),
+CONSTRAINT users_likes_fk FOREIGN KEY (user_id) REFERENCES users(id)
 );
