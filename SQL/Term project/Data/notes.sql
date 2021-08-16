@@ -1,0 +1,11 @@
+USE notes_bot;
+insert into notes (id, project_id, file_name, created_at, updated_at) values (1, 1, 'OrciPedeVenenatis.txt', '2018-12-29', '2020-02-25');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (2, 2, 'EgetTincidunt.txt', '2019-06-21', '2020-03-28');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (3, 3, 'AtFeugiat.txt', '2019-05-11', '2019-12-09');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (4, 4, 'LobortisVelDapibus.txt', '2019-04-03', '2019-10-17');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (5, 5, 'Cras.txt', '2019-08-07', '2020-06-06');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (6, 6, 'Etiam.txt', '2019-04-18', '2019-11-12');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (7, 7, 'SemperEst.txt', '2019-04-24', '2020-01-22');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (8, 8, 'IpsumAc.txt', '2019-01-10', '2019-12-08');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (9, 9, 'Morbi.txt', '2018-10-07', '2019-09-20');
+insert into notes (id, project_id, file_name, created_at, updated_at) values (10, 10, 'VelAugueVestibulum.txt', '2018-11-07', '2020-08-02');

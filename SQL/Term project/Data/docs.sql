@@ -1,0 +1,11 @@
+USE notes_bot;
+insert into docs (id, project_id, file_name, added_at) values (1, 1, 'Magnis.xls', '2020-12-08');
+insert into docs (id, project_id, file_name, added_at) values (2, 2, 'Aenean.avi', '2021-03-05');
+insert into docs (id, project_id, file_name, added_at) values (3, 3, 'Volutpat.mp3', '2020-10-22');
+insert into docs (id, project_id, file_name, added_at) values (4, 4, 'ConsequatDui.ppt', '2021-04-23');
+insert into docs (id, project_id, file_name, added_at) values (5, 5, 'OdioIn.txt', '2020-10-01');
+insert into docs (id, project_id, file_name, added_at) values (6, 6, 'Vestibulum.doc', '2020-11-02');
+insert into docs (id, project_id, file_name, added_at) values (7, 7, 'Vestibulum.png', '2021-07-03');
+insert into docs (id, project_id, file_name, added_at) values (8, 8, 'Pellentesque.avi', '2020-11-10');
+insert into docs (id, project_id, file_name, added_at) values (9, 9, 'Lacus.png', '2020-09-27');
+insert into docs (id, project_id, file_name, added_at) values (10, 10, 'Volutpat.ppt', '2021-07-14');

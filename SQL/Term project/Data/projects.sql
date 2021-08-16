@@ -1,0 +1,11 @@
+USE notes_bot;
+insert into projects (id, name, description) values (1, 'Walker, Windler and Tillman', 'Reduced scalable hierarchy');
+insert into projects (id, name, description) values (2, 'Langosh-Erdman', 'Customizable uniform moderator');
+insert into projects (id, name, description) values (3, 'Moore-Franecki', 'Pre-emptive eco-centric hub');
+insert into projects (id, name, description) values (4, 'Lemke, Mante and Emard', 'Virtual motivating initiative');
+insert into projects (id, name, description) values (5, 'Gerlach-Brakus', 'User-friendly full-range firmware');
+insert into projects (id, name, description) values (6, 'Okuneva and Sons', 'Total eco-centric orchestration');
+insert into projects (id, name, description) values (7, 'Ortiz-Schinner', 'Persevering 24 hour definition');
+insert into projects (id, name, description) values (8, 'Klein-Labadie', 'Multi-tiered content-based ability');
+insert into projects (id, name, description) values (9, 'Ruecker Group', 'Distributed 5th generation customer loyalty');
+insert into projects (id, name, description) values (10, 'Lowe-Legros', 'Multi-lateral logistical projection');

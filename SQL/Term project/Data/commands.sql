@@ -1,0 +1,12 @@
+USE notes_bot;
+insert into commands (id, name, description) values (1, '/start', 'info');
+insert into commands (id, name, description) values (2, '/stop', 'stop execution');
+insert into commands (id, name, description) values (3, '/list_of_notes', 'enumerated list of notes');
+insert into commands (id, name, description) values (4, '/new_note', 'create a new note (name + date)');
+insert into commands (id, name, description) values (5, '/edit_note', 'add some text to the note');
+insert into commands (id, name, description) values (6, '/show_note', 'show note');
+insert into commands (id, name, description) values (7, '/share_note', 'download txt file');
+insert into commands (id, name, description) values (8, '/delete_notes', 'delete a set of notes');
+insert into commands (id, name, description) values (9, '/add_user', 'add user from unknown_members table');
+insert into commands (id, name, description) values (10, '/show_users', 'show list of users');
+insert into commands (id, name, description) values (11, '/help', 'info');
