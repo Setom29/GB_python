@@ -24,3 +24,6 @@ class LeroymerlinParseItem(scrapy.Item):
     url = scrapy.Field(output_processor=TakeFirst())
     price = scrapy.Field(output_processor=TakeFirst(), input_processor=MapCompose(process_price))
     photos = scrapy.Field()
+    feature_names = scrapy.Field()
+    feature_values = scrapy.Field()
+    features = scrapy.Field()
