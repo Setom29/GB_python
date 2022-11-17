@@ -39,11 +39,13 @@ def precision_at_k(recommended_list, bought_list, k=5):
 
     return precision
 
+
 def money_precision_at_k(recommended_list, bought_list, prices_recommended, k=5):
     recommended_list = np.array(recommended_list)[:k]
     prices_recommended = np.array(prices_recommended)[:k]
     flags = np.isin(recommended_list, bought_list)
     return np.dot(flags, prices_recommended).sum() / prices_recommended.sum()
+
 
 def recall(recommended_list, bought_list):
     bought_list = np.array(bought_list)
@@ -54,6 +56,7 @@ def recall(recommended_list, bought_list):
     recall = flags.sum() / len(bought_list)
 
     return recall
+
 
 def recall_at_k(recommended_list, bought_list, k=5):
 
@@ -67,7 +70,6 @@ def recall_at_k(recommended_list, bought_list, k=5):
     recall = flags.sum() / len(bought_list)
 
     return recall
-
 
 def money_recall_at_k(recommended_list, bought_list, prices_recommended, prices_bought, k=5):
     bought_list = np.array(bought_list)
@@ -92,3 +94,7 @@ def ap_k(recommended_list, bought_list, k=5):
     sum_ = sum(
         [precision_at_k(recommended_list, bought_list, k=index_relevant + 1) for index_relevant in relevant_indexes])
     return sum_ / amount_relevant
+
+def map_k(recommended_list, bought_list, k=10):
+
+    return np.mean([ap_k(b, r,k) for b, r in zip(recommended_list, bought_list)])
