@@ -1,0 +1,2161 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "t6_vcBAmo6k9"
+   },
+   "source": [
+    "# Рекурентные сети для обработки последовательностей\n",
+    "\n",
+    "Вспомним все, что мы уже знаем про обработку текстов:\n",
+    "- Компьютер не понимает текст, поэтому нам нужно его как-то закодировать - представить в виде вектора или эмбеддинга\n",
+    "- Слово - это токен\n",
+    "- В тексте много повторяющихся слов/лишний слов - нужно сделать препроцессинг:\n",
+    "    - удалить знаки препинания\n",
+    "    - удалить стоп-слова\n",
+    "    - Удаляем html-теги, схлопываем текст, удаляем спецсимволы\n",
+    "    - привести слова к начальной форме (**стемминг** и **лемматизация**)\n",
+    "   \n",
+    "   Лемматизация - заменяет грамматическое окончание суффиксом или окончанием начальной формы\n",
+    "   \n",
+    "    \n",
+    "- После этого мы можем представить наш текст (набор слов) в виде вектора, например, стандартными способами:\n",
+    "    - **CounterEncoding** - вектор длины размер нашего словаря\n",
+    "        - есть словарь vocab, который можем включать слова, ngram-ы\n",
+    "        - каждому документу $doc$ ставим в соответствие вектор $vec\\ :\\ vec[i]=1,\\ если\\ vocab[i]\\ \\in\\ doc$\n",
+    "    - **TfIdfVectorizer** - вектор длины размер нашего словаря\n",
+    "        - есть словарь vocab, который можем включать слова, ngram-ы\n",
+    "        - каждому документу $doc$ ставим в соответствие вектор $vec\\ :\\ vec[i]=tf(vocab[i])*idf(vocab[i]),\\ если\\ vocab[i]\\ \\in\\ doc$\n",
+    "    \n",
+    "        $$ tf(t,\\ d)\\ =\\ \\frac{n_t}{\\sum_kn_k} $$\n",
+    "        $$ idf(t,\\ D)\\ =\\ \\log\\frac{|D|}{|\\{d_i\\ \\in\\ D|t\\ \\in\\ D\\}|} $$\n",
+    "\n",
+    "\n",
+    "\n",
+    "* Вес некоторого слова пропорционален частоте употребления этого слова в документе и обратно пропорционален частоте употребления слова во всех документах коллекции.\n",
+    "\n",
+    "\n",
+    "* TF (term frequency — частота слова) — отношение числа вхождений некоторого слова к общему числу слов документа. Таким образом, оценивается важность слова в пределах отдельного документа.\n",
+    "\n",
+    "* IDF (inverse document frequency — обратная частота документа) — инверсия частоты, с которой некоторое слово встречается в документах коллекции. \n",
+    "\n",
+    "* Большой вес в TF-IDF получат слова с высокой частотой в пределах конкретного документа и с низкой частотой употреблений в других документах.\n",
+    "\n",
+    ", где \n",
+    "- $n_t$ - число вхождений слова $t$ в документ, а в знаменателе — общее число слов в данном документе\n",
+    "- $|D|$ — число документов в коллекции;\n",
+    "- $|\\{d_i\\ \\in\\ D\\mid\\ t\\in d_i\\}|$— число документов из коллекции $D$, в которых встречается $t$ (когда $n_t\\ \\neq\\ 0$).\n",
+    "\n",
+    "\n",
+    "\n",
+    "Это база и она работает. Мы изучили более продвинутые подходы: эмбединги и сверточные сети по эмбедингам. Но тут есть проблема: любой текст - это последовательность, ни эмбединги, ни сверточные сети не работают с ним как с последовательностью. Так давайте попробуем придумать архитектуру, которая будет работать с текстом как с последовательностью, двигаясь по эмбедингам и как-то меняя их значения."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "нельзя бы тут никогда наконец еще и чтоб него чего есть раз этот зачем моя там вот между потому я\n",
+      "****************************************************************************************************\n",
+      "['князь-княз', 'равнодушно-равнодушн', 'анна-ан', 'свойственною-свойствен', 'ей-е', 'придворною-придворн', 'женскою-женск', 'ловкостью-ловкост', 'быстротою-быстрот', 'захотела-захотел', 'щелкануть-щелканут', 'князя-княз', 'отозваться-отозва', 'рекомендованном-рекомендова', 'время-врем', 'утешить-утеш']\n",
+      "****************************************************************************************************\n",
+      "['свойственною-свойственный', 'ей-она', 'придворною-придворный', 'женскою-женский', 'ловкостью-ловкость', 'быстротою-быстрота', 'захотела-захотеть', 'князя-князь', 'дерзнул-дерзнуть', 'рекомендованном-рекомендовать']\n",
+      "****************************************************************************************************\n"
+     ]
+    }
+   ],
+   "source": [
+    "import nltk\n",
+    "#nltk.download('stopwords')\n",
+    "stopwords = nltk.corpus.stopwords.words(\"russian\")\n",
+    "stopwords = list(set(stopwords))\n",
+    "print(' '.join([x for x in stopwords[:20]]))\n",
+    "print('*'*100)\n",
+    "\n",
+    "\n",
+    "tokens = 'Князь равнодушно замолк, Анна Павловна, с свойственною ей придворною и женскою ловкостью и быстротою такта, захотела и щелкануть князя за то, что он дерзнул так отозваться о лице, рекомендованном императрице, и в то же время утешить его.'.split()\n",
+    "tokens = [str(x).lower() for x in tokens]\n",
+    "\n",
+    "\n",
+    "stemmer = nltk.stem.SnowballStemmer('russian')\n",
+    "stemmed = []\n",
+    "for token in tokens:\n",
+    "    if token != stemmer.stem(token):\n",
+    "        stemmed.append(token + \"-\" + stemmer.stem(token))\n",
+    "print(stemmed)\n",
+    "print('*'*100)\n",
+    "\n",
+    "\n",
+    "#pymorphy2\n",
+    "# - приводить слово к нормальной форме (например, “люди -> человек”, или “гулял -> гулять”).\n",
+    "# - ставить слово в нужную форму. Например, ставить слово во множественное число, менять падеж слова и т.д.\n",
+    "# - возвращать грамматическую информацию о слове (число, род, падеж, часть речи и т.д.)\n",
+    "import pymorphy2\n",
+    "morph = pymorphy2.MorphAnalyzer()\n",
+    "lemm = []\n",
+    "for token in tokens:\n",
+    "    if token != morph.parse(token)[0][2]:\n",
+    "        lemm.append(token + \"-\" + morph.parse(token)[0][2])\n",
+    "print(lemm)\n",
+    "print('*'*100)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "from sklearn.feature_extraction.text import TfidfVectorizer\n",
+    "\n",
+    "a = 'Князь равнодушно замолк, Анна Павловна, с свойственною ей придворною и женскою ловкостью и быстротою такта, захотела и щелкануть князя за то, что он дерзнул так отозваться о лице, рекомендованном императрице, и в то же время утешить его.'\n",
+    "b = '— Я часто думаю, — продолжала Анна Павловна после минутного молчания, придвигаясь к князю и ласково улыбаясь ему, как будто выказывая этим, что политические и светские разговоры кончены и теперь начинается задушевный, — я часто думаю, как иногда несправедливо распределяется счастие жизни.'\n",
+    "c = 'Приехала высшая знать Петербурга, люди самые разнородные по возрастам и характерам, но одинаковые по обществу, в каком все жили; приехала дочь князя Василия, красавица Элен, заехавшая за отцом, чтобы с ним вместе ехать на праздник посланника.'\n",
+    "df = pd.DataFrame.from_dict({0:a, 1:b, 2:c}, orient='index').rename(columns={'index':'event', 0:'text'})\n",
+    "\n",
+    "def lemma(txt):\n",
+    "    return ' '.join([morph.parse(x)[0].normal_form for x in txt.split()])\n",
+    "\n",
+    "df['text'] = df['text'].apply(lambda x: str(x).replace('—', '').replace(',', '').replace('.', ''))\n",
+    "df['text'] = df['text'].apply(lambda x: lemma(x))\n",
+    "\n",
+    "#vectorizer=TfidfVectorizer(analyzer='word', lowercase=False, ngram_range=(1, 2), min_df=0.0005, max_df=0.995, max_features = None)\n",
+    "vectorizer=TfidfVectorizer(analyzer='word', lowercase=False, ngram_range=(1, 2), min_df=0.0, max_df=1.0, max_features = None)\n",
+    "X = vectorizer.fit_transform(df['text'])\n",
+    "\n",
+    "count_vect_df = pd.DataFrame(X.todense(), columns=vectorizer.get_feature_names())\n",
+    "df = pd.concat([df, count_vect_df], axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>text</th>\n",
+       "      <th>анна</th>\n",
+       "      <th>анна павлович</th>\n",
+       "      <th>будто</th>\n",
+       "      <th>будто выказывать</th>\n",
+       "      <th>быстрота</th>\n",
+       "      <th>быстрота такт</th>\n",
+       "      <th>василий</th>\n",
+       "      <th>василий красавица</th>\n",
+       "      <th>вместе</th>\n",
+       "      <th>...</th>\n",
+       "      <th>что он</th>\n",
+       "      <th>что политический</th>\n",
+       "      <th>чтобы</th>\n",
+       "      <th>чтобы они</th>\n",
+       "      <th>щелкануть</th>\n",
+       "      <th>щелкануть князь</th>\n",
+       "      <th>элен</th>\n",
+       "      <th>элен заехать</th>\n",
+       "      <th>это</th>\n",
+       "      <th>это что</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>князь равнодушно замолкнуть анна павлович с св...</td>\n",
+       "      <td>0.099349</td>\n",
+       "      <td>0.099349</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>я часто думать продолжать анна павлович после ...</td>\n",
+       "      <td>0.090744</td>\n",
+       "      <td>0.090744</td>\n",
+       "      <td>0.119318</td>\n",
+       "      <td>0.119318</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.119318</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.119318</td>\n",
+       "      <td>0.119318</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>приехать высокий знать петербург человек самый...</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>3 rows × 173 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "                                                text      анна  анна павлович  \\\n",
+       "0  князь равнодушно замолкнуть анна павлович с св...  0.099349       0.099349   \n",
+       "1  я часто думать продолжать анна павлович после ...  0.090744       0.090744   \n",
+       "2  приехать высокий знать петербург человек самый...  0.000000       0.000000   \n",
+       "\n",
+       "      будто  будто выказывать  быстрота  быстрота такт   василий  \\\n",
+       "0  0.000000          0.000000  0.130631       0.130631  0.000000   \n",
+       "1  0.119318          0.119318  0.000000       0.000000  0.000000   \n",
+       "2  0.000000          0.000000  0.000000       0.000000  0.121333   \n",
+       "\n",
+       "   василий красавица    вместе  ...    что он  что политический     чтобы  \\\n",
+       "0           0.000000  0.000000  ...  0.130631          0.000000  0.000000   \n",
+       "1           0.000000  0.000000  ...  0.000000          0.119318  0.000000   \n",
+       "2           0.121333  0.121333  ...  0.000000          0.000000  0.121333   \n",
+       "\n",
+       "   чтобы они  щелкануть  щелкануть князь      элен  элен заехать       это  \\\n",
+       "0   0.000000   0.130631         0.130631  0.000000      0.000000  0.000000   \n",
+       "1   0.000000   0.000000         0.000000  0.000000      0.000000  0.119318   \n",
+       "2   0.121333   0.000000         0.000000  0.121333      0.121333  0.000000   \n",
+       "\n",
+       "    это что  \n",
+       "0  0.000000  \n",
+       "1  0.119318  \n",
+       "2  0.000000  \n",
+       "\n",
+       "[3 rows x 173 columns]"
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>анна</th>\n",
+       "      <th>анна павлович</th>\n",
+       "      <th>дочь князь</th>\n",
+       "      <th>замолкнуть анна</th>\n",
+       "      <th>князь</th>\n",
+       "      <th>князь василий</th>\n",
+       "      <th>князь за</th>\n",
+       "      <th>князь ласково</th>\n",
+       "      <th>князь равнодушно</th>\n",
+       "      <th>придвигаться князь</th>\n",
+       "      <th>продолжать анна</th>\n",
+       "      <th>щелкануть князь</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>0.099349</td>\n",
+       "      <td>0.099349</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.154306</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.130631</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.130631</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>0.090744</td>\n",
+       "      <td>0.090744</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.070471</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.119318</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.119318</td>\n",
+       "      <td>0.119318</td>\n",
+       "      <td>0.000000</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.071661</td>\n",
+       "      <td>0.121333</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "       анна  анна павлович  дочь князь  замолкнуть анна     князь  \\\n",
+       "0  0.099349       0.099349    0.000000         0.130631  0.154306   \n",
+       "1  0.090744       0.090744    0.000000         0.000000  0.070471   \n",
+       "2  0.000000       0.000000    0.121333         0.000000  0.071661   \n",
+       "\n",
+       "   князь василий  князь за  князь ласково  князь равнодушно  \\\n",
+       "0       0.000000  0.130631       0.000000          0.130631   \n",
+       "1       0.000000  0.000000       0.119318          0.000000   \n",
+       "2       0.121333  0.000000       0.000000          0.000000   \n",
+       "\n",
+       "   придвигаться князь  продолжать анна  щелкануть князь  \n",
+       "0            0.000000         0.000000         0.130631  \n",
+       "1            0.119318         0.119318         0.000000  \n",
+       "2            0.000000         0.000000         0.000000  "
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df[[x for x in df.columns if x.count('анна') > 0 or x.count('князь') > 0]]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#df.columns.to_list()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Если документ содержит 100 слов, и слово[3] «заяц» встречается в нём 3 раза, то частота слова (TF) для слова «заяц» в документе будет 0,03 (3/100). Вычислим IDF как десятичный логарифм отношения количества всех документов к количеству документов, содержащих слово «заяц». Таким образом, если «заяц» содержится в 1000 документах из 10 000 000 документов, то IDF будет равной: log(10 000 000/1000) = 4. Для расчета окончательного значения веса слова необходимо TF умножить на IDF. В данном примере, TF-IDF вес для слова «заяц» в выбранном документе будет равен: 0,03 × 4 = 0,12."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = pd.DataFrame.from_dict({0:a.lower(), 1:b.lower(), 2:c.lower()}, orient='index').rename(columns={'index':'event', 0:'text'})\n",
+    "df['text'] = df['text'].apply(lambda x: str(x).replace('—', '').replace(',', '').replace('.', ''))\n",
+    "df['text'] = df['text'].apply(lambda x: lemma(x))\n",
+    "vectorizer=TfidfVectorizer(analyzer='word', lowercase=False, ngram_range=(1, 1), min_df=0.0, max_df=1.0, max_features=None)#, sublinear_tf=True , norm=None, use_idf=True, sublinear_tf=False, binary=True)\n",
+    "X = vectorizer.fit_transform(df['text'])\n",
+    "count_vect_df = pd.DataFrame(X.todense(), columns=vectorizer.get_feature_names())\n",
+    "df = pd.concat([df, count_vect_df], axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0. ngram=37   TF=0.02702702702702703\n",
+      "1. ngram=39   TF=0.02564102564102564\n",
+      "2. ngram=36   TF=0.0\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "112"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "wd = \"анна\"\n",
+    "sm = 0\n",
+    "tf = []\n",
+    "for i in range(3):\n",
+    "    tf.append(df.loc[i,\"text\"].count(wd)/len(df.loc[i,\"text\"].split()))\n",
+    "    print(f'{i}. ngram={len(df.loc[i,\"text\"].split())}   TF={df.loc[i,\"text\"].count(wd)/len(df.loc[i,\"text\"].split())}')\n",
+    "    sm += len(df.loc[i,\"text\"].split())\n",
+    "sm"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "2 3 0.17609125905568124\n"
+     ]
+    }
+   ],
+   "source": [
+    "v0 = np.sum([df.loc[i,\"text\"].count(wd) for i in range(len(df))])\n",
+    "v1 = len(df)\n",
+    "v2 = np.log10(v1/v0)\n",
+    "print(v0, v1, v2)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[0.0047592232177211145, 0.004515160488607211, 0.0]"
+      ]
+     },
+     "execution_count": 9,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "[x*v2 for x in tf]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>анна</th>\n",
+       "      <th>князь</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>0.138800</td>\n",
+       "      <td>0.215582</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>0.125604</td>\n",
+       "      <td>0.097543</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.098536</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "       анна     князь\n",
+       "0  0.138800  0.215582\n",
+       "1  0.125604  0.097543\n",
+       "2  0.000000  0.098536"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df[[x for x in df.columns if x.count('анна') > 0 or x.count('князь') > 0]]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "Vv0Vrhdbp5Dr"
+   },
+   "source": [
+    "# 1. RNN"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "uH2QSxGUp5Ds"
+   },
+   "source": [
+    "Рассмотрим архитектуру, которая позволяет решать задачи свзанные с последовательностями. Будем изучать по мотивам известной [статьи](http://karpathy.github.io/2015/05/21/rnn-effectiveness/) от [Андрея Карпатова](http://karpathy.github.io/)."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "f1PawJNIp5Dt"
+   },
+   "source": [
+    "<img src='https://drive.google.com/uc?export=view&id=1hYDawc813JLg6vHdvVlbZH-S7ADtwGX6' width=1000>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "2aiPfu8Dp5Dt"
+   },
+   "source": [
+    "* 1) На первой картинке представлен пример нашей обычной нейронной сети. Она что-то получает на вход, что-то с ним делает и выдает выходные значения. Все фиксированных размеров. (описание квартиры, картинка) -> (стоимость, класс)\n",
+    "* 2) Мы познакомимся с архитектурой, которая может на вход получить один вход, а на выходе иметь несколько.  (описание квартиры, картинка) -> (описание квариры, описание картины)\n",
+    "* 3) И наоборот, на вход подать несколько (причем неизвестного количества), а на выходе одно значение. Один из примеров такой задачи - это [sentimental analysis](https://monkeylearn.com/sentiment-analysis/). Т.е. на вход идет некое предложение, а на выход мы хотим получить одно значение. Например, оно позитивное или негативное или еще какое. (твиты разной длины) -> (тематика)  \n",
+    "* 4) Или же могут быть варианты многие ко многим. На вход подаем некоторое переменное количество параметров, а на выходе другое тоже переменое количество параметров.  (перевод текста (перевод на другие иностранные языки)) через одно состояние. \n",
+    "* 5) Или другой вариант многие ко многим - это когда количество параметров на входе фиксированно и соотвествует выходу, через несколько состояний (классификация каждого токена)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "-FoWcMjep5Du"
+   },
+   "source": [
+    "Собственно, как выглядит архитектура, которая позволяет работать с таким переменным количетсвом параметров на вход и на выход?"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "BrZBWJ-Np5Dv"
+   },
+   "source": [
+    "## 1.1 Основная Идея\n",
+    "Возьмем обычную нейронную сеть. \n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1ccQJE-E40zNb8U1pfalvxdMXqabepwZp' width=300>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "FD88_29ip5Dw"
+   },
+   "source": [
+    "У нас есть вход, выход и т.д. Посередине один линейный слой. И он выдает какой-то сигнал на выходе.  \n",
+    "И мы возьмем и начнем этот же сигнал (этот же вектор) подавать на вход сети самой себе на следующем шаге: (Для передачи контекста соседнего слова, через скрытое состояние)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "dQ1DReTZp5Dw"
+   },
+   "source": [
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1zPx_5hIX8_1Q0EPEUWjcOn7hNGHgALWi' width=600>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "6c027z4dp5Dx"
+   },
+   "source": [
+    "У нас есть какая-то последовательность данных. Например назовем их a, b, c. Для первого элемента последовательности мы просто прогнали сеть. Чтобы вход скрытого слоя всегда получал одно и тоже значение, мы сначала даем ему просто какой-то нулевой вектор и то что выдал предыдущий слой. А для следующей сети из последовательности мы возьмем то, что выдала сеть на прошлом шаге и передадим ей. Т.е. у такой сети есть возможность передать самой себе в будущем некоторое состояние. Ну и продолжим так делать. "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "ymEz8Wojp5Dx"
+   },
+   "source": [
+    "<img src='https://drive.google.com/uc?export=view&id=1pHueSBIHuRxh1DJTfkQny007g3dh_pCw' width=800>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "zVYcOqQIp5Dy"
+   },
+   "source": [
+    "Мы тренируем такую систему, где промежуточный выход с сети прошлого шага дают на вход сети на следующем шаге. Это значит, что она может выучить некоторое  представление входа. Как-то его закодировать в вектор и передать самой себе на следующем шаге, чтобы знать, что происходило раньше. И таким образом результирующий выход сети, он уже зависит от всей накопленной последовательности. И это дает нам возможность на основе всей последовательности выдать выход.  \n",
+    "И тот факт, что мы даем на вход сети самой себе - это некоторая рекурсия и поэтому такая архитектура называется так, как она называется."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "g8Q3s5Ecp5Dy"
+   },
+   "source": [
+    "## 1.2 Давайте посмотрим как это примерно выглядит в коде:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "U7T_wEG9p5Dz"
+   },
+   "source": [
+    "```\n",
+    "\n",
+    "class RNN:\n",
+    "  # ...\n",
+    "  def step(self, x):\n",
+    "    # update the hidden state\n",
+    "    # Обновляем новое скрытое состояние = тангенс( (матричное перемножение весов скрытого слова и значения старого скрытого слова) + матричное перемножение весов входа со значением входа)\n",
+    "    self.h = np.tanh(np.dot(self.W_hh, self.h) + np.dot(self.W_xh, x))\n",
+    "    # compute the output vector - создаем вектор на выходе\n",
+    "    y = np.dot(self.W_hy, self.h)\n",
+    "    return y\n",
+    "\n",
+    "```\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "p8WAsIgzp5D0"
+   },
+   "source": [
+    "Вот наш шаг - т.е. forward, прямой проход. Он выглядит следующим образом:  \n",
+    "Мы делаем матричное произведение весов W и текущего состояния h и добавляем тоже произведение весов W на вход x. и получаем новый h."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "thHcGUkbp5D0"
+   },
+   "source": [
+    "Давайте о том же самом, только на другой картинке:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "zA43syrZp5D1"
+   },
+   "source": [
+    "<img src='https://drive.google.com/uc?export=view&id=1cJVaUAJZdjaFw65zR_2QyJ9nEgmMV8td' width=800>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "1hNJc-xVp5D1"
+   },
+   "source": [
+    "У нас есть набор X, где t - элементы последовательности. Мы сливаем h и X_t  вместе, прогоняем через слой, через тангенсальную функцию активации. и получаем следующие h.\n",
+    "\n",
+    "Почему tanh? А например не ReLU? Второй всегда отрезает отрицательную часть сигнала. И это имеет такое последствие, что сигнал, который проходит через сеть никогда не сможет стать отрицательным. И это значит, что когда через много слоев проходим - то сигнал может только расти. Поэтому пользуются именно tanh, что бы были возможности получить и плюс, и минус."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "5bJvuRlEp5D2"
+   },
+   "source": [
+    "## 1.3 Количество слоев рекурентных нейронов"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "edqD0mlsp5D2"
+   },
+   "source": [
+    "Можно так же настэкать большое количество слоев, как и везде.   \n",
+    "Вот так выглядит рекурентная сеть с несколькими слоями:\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=175Ij-M6mGkW7zo2n-_u9fM-cPezPcTo8' width=800>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "U9zA9Qx4p5D3"
+   },
+   "source": [
+    "То есть обычным образом можно прогнать сигнал через слои сети. И при этом каждый из слоев выдает своему эквивалентному слою в следующей итерации сети некоторое скрытое состояние. Чем больше слоев, тем сеть обладает большей обобщающей способностью. И каждый слой на своем уровне понимания может себе в будущем передать состояние. При этом веса у каждого эквивалентного слоя одни и те же."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "2V8xOuWsp5D3"
+   },
+   "source": [
+    "## 1.4 Пример"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "WNiJbLa3p5D4"
+   },
+   "source": [
+    "Вот у нас есть задача генерации текста. Разберем наш текст на последовательность символов.  \n",
+    "\n",
+    "[BOS], \"h\", \"e\", \"l\", \"l\", \"o\""
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "MkP-h85Kp5D4"
+   },
+   "source": [
+    "У нас будет специальный вспомогательный символ BOS - begin of sentense.  \n",
+    "\n",
+    "И мы будем тренировать сеть, такую, что по каждому элементу будем предсказывать следующий. Т.е.\n",
+    "\n",
+    "[BOS] -> 'h'  \n",
+    "'h' -> 'e'  \n",
+    "'e' -> 'l'  \n",
+    "'l' -> 'l'  \n",
+    "'l' -> 'o'  \n",
+    "'o' -> [EOS]  \n",
+    "\n",
+    "Каждый элемент преобразовываем OneHotEncoding в число и обрано с помощью SoftMax"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "Z08jSv7rp5D5"
+   },
+   "source": [
+    "Вот пример как это может выглядеть:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "xlyMQcgZp5D5"
+   },
+   "source": [
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1h6ABYQwTIxCAKdxjgRiIjkf_Go1qvojW' width=800>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "DYNwKiK5p5D6"
+   },
+   "source": [
+    "Элементы нашей последовательности мы можем представить как one-hot представление. Оно все проходит и на выходе предсказывает следующий символ в one-hot представлении. И если это дело долго тренировать, то на выходе такая сеть начинает генерировать реально хороший текст."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "2O81r569ReR-",
+    "outputId": "59d59162-4b09-4209-868f-4c21c58c8d03"
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "zsh:1: command not found: pip\r\n"
+     ]
+    }
+   ],
+   "source": [
+    "!pip install stop-words pymorphy2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {
+    "id": "BpooDtBoo6lB"
+   },
+   "outputs": [
+    {
+     "ename": "SyntaxError",
+     "evalue": "invalid syntax (<ipython-input-16-8bf9743a3532>, line 2)",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;36m  File \u001b[0;32m\"<ipython-input-16-8bf9743a3532>\"\u001b[0;36m, line \u001b[0;32m2\u001b[0m\n\u001b[0;31m    pip install stop_words\u001b[0m\n\u001b[0m              ^\u001b[0m\n\u001b[0;31mSyntaxError\u001b[0m\u001b[0;31m:\u001b[0m invalid syntax\n"
+     ]
+    }
+   ],
+   "source": [
+    "# попробуем запрограммировать простую рекурентную сеть. Возьмем датасет с прошлого занятия\n",
+    "pip install stop_words\n",
+    "\n",
+    "import pandas as pd\n",
+    "from string import punctuation\n",
+    "from stop_words import get_stop_words\n",
+    "from pymorphy2 import MorphAnalyzer\n",
+    "import re"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "XzAye9tJRPaH"
+   },
+   "source": [
+    "Ссылка на google drive: https://drive.google.com/file/d/1Mev_EEput0LlBj8MDHIJkBtahlJ6J901"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "kAcbPjyeRSkQ",
+    "outputId": "e7a3d712-b365-4a46-e079-e128318a54e6"
+   },
+   "outputs": [],
+   "source": [
+    "!wget 'https://drive.google.com/uc?export=download&id=1Mev_EEput0LlBj8MDHIJkBtahlJ6J901' -O data.zip"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "mjAuCojERXaa",
+    "outputId": "c2e4261c-affe-4f90-d9e0-d42a47225316"
+   },
+   "outputs": [],
+   "source": [
+    "!unzip data.zip"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "LUCk-5M2yg3S"
+   },
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "\n",
+    "df_train = pd.read_csv(\"train.csv\")\n",
+    "df_val = pd.read_csv(\"val.csv\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/",
+     "height": 206
+    },
+    "id": "v7G2jv7Ro6lC",
+    "outputId": "c0f1d4e8-0db5-464b-eeb9-4a57f7d53b00"
+   },
+   "outputs": [],
+   "source": [
+    "df_train.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "dfMrjVd6o6lD"
+   },
+   "outputs": [],
+   "source": [
+    "sw = set(get_stop_words(\"ru\"))\n",
+    "puncts = set(punctuation)\n",
+    "morpher = MorphAnalyzer()\n",
+    "\n",
+    "\n",
+    "def preprocess_text(txt):\n",
+    "    txt = str(txt)\n",
+    "    txt = \"\".join(c for c in txt if c not in puncts)\n",
+    "    txt = txt.lower()\n",
+    "    txt = re.sub(\"не\\s\", \"не\", txt)\n",
+    "    txt = [morpher.parse(word)[0].normal_form for word in txt.split() if word not in sw]\n",
+    "    return \" \".join(txt)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "eZHFblHvRmiJ",
+    "outputId": "ae3af6bf-c7a1-4738-9fae-a50737b8d75e"
+   },
+   "outputs": [],
+   "source": [
+    "from tqdm import tqdm \n",
+    "tqdm.pandas()\n",
+    "\n",
+    "df_train['text'] = df_train['text'].progress_apply(preprocess_text)\n",
+    "df_val['text'] = df_val['text'].progress_apply(preprocess_text)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "C4o9QgmWI3Pw"
+   },
+   "outputs": [],
+   "source": [
+    "train_corpus = \" \".join(df_train[\"text\"])\n",
+    "train_corpus = train_corpus.lower()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "Hed2ySbwJH6B",
+    "outputId": "d633a131-b87f-4369-ecf0-bfdf6c7cc7fd"
+   },
+   "outputs": [],
+   "source": [
+    "import nltk\n",
+    "from nltk.tokenize import word_tokenize\n",
+    "nltk.download(\"punkt\")\n",
+    "\n",
+    "tokens = word_tokenize(train_corpus)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "yJ8T0fwYJYJX"
+   },
+   "source": [
+    "Отфильтруем данные\n",
+    "\n",
+    "и соберём в корпус N наиболее частых токенов"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "crczOvHcSlN2"
+   },
+   "outputs": [],
+   "source": [
+    "max_words = 2000\n",
+    "max_len = 20\n",
+    "num_classes = 1\n",
+    "\n",
+    "# Training\n",
+    "epochs = 5\n",
+    "batch_size = 512\n",
+    "print_batch_n = 100"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "EXOLVK1tJLT8"
+   },
+   "outputs": [],
+   "source": [
+    "tokens_filtered = [word for word in tokens if word.isalnum()]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "8qCQH5nIJoiB"
+   },
+   "outputs": [],
+   "source": [
+    "from nltk.probability import FreqDist\n",
+    "\n",
+    "# Формируем max_len токенов по частоте \n",
+    "# Если < max_len то добиваем до max_len\n",
+    "\n",
+    "dist = FreqDist(tokens_filtered)\n",
+    "tokens_filtered_top = [pair[0] for pair in dist.most_common(max_words-1)]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "bRQ-6wwjJrGo",
+    "outputId": "246a6af8-a5f1-42fc-c4e8-6031bc928e86"
+   },
+   "outputs": [],
+   "source": [
+    "tokens_filtered_top[:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "Tdk777qGJtz4"
+   },
+   "outputs": [],
+   "source": [
+    "# формируем словарь\n",
+    "\n",
+    "vocabulary = {v: k for k, v in dict(enumerate(tokens_filtered_top, 1)).items()}\n",
+    "# vocabulary"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "5OULZgvkJzpj"
+   },
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "\n",
+    "\n",
+    "def text_to_sequence(text, maxlen):\n",
+    "    result = []\n",
+    "    tokens = word_tokenize(text.lower())\n",
+    "    tokens_filtered = [word for word in tokens if word.isalnum()]\n",
+    "    for word in tokens_filtered:\n",
+    "        if word in vocabulary:\n",
+    "            result.append(vocabulary[word])\n",
+    "\n",
+    "    padding = [0] * (maxlen-len(result))\n",
+    "    return result[-maxlen:] + padding"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "pqHlf5nNJ2hl",
+    "outputId": "cdb403fd-4b5d-443d-a1fc-f0ce6bf91e90"
+   },
+   "outputs": [],
+   "source": [
+    "%%time\n",
+    "x_train = np.asarray([text_to_sequence(text, max_len) for text in df_train[\"text\"]], dtype=np.int32)\n",
+    "x_val = np.asarray([text_to_sequence(text, max_len) for text in df_val[\"text\"]], dtype=np.int32)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "lI4NUg_TJ6NK",
+    "outputId": "c9e2e9a7-3177-4cc2-b9b7-9ca703679db9"
+   },
+   "outputs": [],
+   "source": [
+    "x_train.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "9QlLvXd9KDf3",
+    "outputId": "db81449e-17cc-48ba-d139-1dafb2407d32"
+   },
+   "outputs": [],
+   "source": [
+    "x_train[1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "IqXHY5ARSxoV"
+   },
+   "outputs": [],
+   "source": [
+    "from torch.utils.data import DataLoader, Dataset\n",
+    "import torch\n",
+    "\n",
+    "\n",
+    "class DataWrapper(Dataset):\n",
+    "    def __init__(self, data, target, transform=None):\n",
+    "        self.data = torch.from_numpy(data).long()\n",
+    "        self.target = torch.from_numpy(target).long()\n",
+    "        self.transform = transform\n",
+    "        \n",
+    "    def __getitem__(self, index):\n",
+    "        x = self.data[index]\n",
+    "        y = self.target[index]\n",
+    "        \n",
+    "        if self.transform:\n",
+    "            x = self.transform(x)\n",
+    "            \n",
+    "        return x, y\n",
+    "    \n",
+    "    def __len__(self):\n",
+    "        return len(self.data)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "kNTWTaxlSy3N"
+   },
+   "outputs": [],
+   "source": [
+    "train_dataset = DataWrapper(x_train, df_train['class'].values)\n",
+    "train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)\n",
+    "\n",
+    "val_dataset = DataWrapper(x_val, df_val['class'].values)\n",
+    "val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "fvtTpOFZPp1O"
+   },
+   "source": [
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=175Ij-M6mGkW7zo2n-_u9fM-cPezPcTo8' width=800>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "O38bou70o6lG"
+   },
+   "outputs": [],
+   "source": [
+    "from torch import nn\n",
+    "\n",
+    "\n",
+    "class RNNFixedLen(nn.Module) :\n",
+    "    def __init__(self, vocab_size, embedding_dim=128, hidden_dim=128, use_last=True):\n",
+    "        super().__init__()\n",
+    "        self.use_last = use_last\n",
+    "        self.embeddings = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)\n",
+    "        self.rnn = nn.RNN(embedding_dim, hidden_dim, num_layers=2, batch_first=True, )\n",
+    "        self.linear = nn.Linear(hidden_dim, 1)\n",
+    "        self.dropout = nn.Dropout(0.2)\n",
+    "        \n",
+    "    def forward(self, x):\n",
+    "        x = self.embeddings(x)\n",
+    "        x = self.dropout(x)\n",
+    "\n",
+    "        rnn_out, ht = self.rnn(x) \n",
+    "        # rnn_out: тензор с выходными фичами с последнего слоя для каждого t\n",
+    "        # h_t: тензор с последними скрытыми состояниями по слоям\n",
+    "\n",
+    "        if self.use_last:\n",
+    "            last_tensor = rnn_out[:,-1,:]\n",
+    "        else:\n",
+    "            # use mean\n",
+    "            last_tensor = torch.mean(rnn_out[:,:], dim=1)\n",
+    "    \n",
+    "        out = self.linear(last_tensor)\n",
+    "        \n",
+    "        return torch.sigmoid(out)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "0XE-LnMho6lH"
+   },
+   "outputs": [],
+   "source": [
+    "rnn_init = RNNFixedLen(max_words, 128, 20, use_last=False)\n",
+    "optimizer = torch.optim.Adam(rnn_init.parameters(), lr=0.001)\n",
+    "criterion = nn.BCELoss()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "1OXY71G4veHj",
+    "outputId": "4a2c8d8b-6d9b-4ffc-fd77-eae3e9bb78a5"
+   },
+   "outputs": [],
+   "source": [
+    "print(rnn_init)\n",
+    "print(\"Parameters:\", sum([param.nelement() for param in rnn_init.parameters()]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/",
+     "height": 36
+    },
+    "id": "NLj6P7Vxt8GY",
+    "outputId": "25204e84-f5d8-41ff-a28c-4469843acf10"
+   },
+   "outputs": [],
+   "source": [
+    "device = 'cuda' if torch.cuda.is_available() else 'cpu'\n",
+    "rnn_init.to(device)\n",
+    "device"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "fYvioFNjut4i",
+    "outputId": "9dc29ed9-afac-4ec9-c3f7-949c780efa02"
+   },
+   "outputs": [],
+   "source": [
+    "rnn_init = rnn_init.to(device)\n",
+    "rnn_init.train()\n",
+    "th = 0.5\n",
+    "\n",
+    "train_loss_history = []\n",
+    "test_loss_history = []\n",
+    "\n",
+    "\n",
+    "for epoch in range(epochs):  \n",
+    "    rnn_init.train()\n",
+    "    running_items, running_right = 0.0, 0.0\n",
+    "    for i, data in enumerate(train_loader):\n",
+    "        inputs, labels = data[0].to(device), data[1].to(device)\n",
+    "\n",
+    "        # обнуляем градиент\n",
+    "        optimizer.zero_grad()\n",
+    "        outputs = rnn_init(inputs)\n",
+    "        \n",
+    "        loss = criterion(outputs, labels.float().view(-1, 1))\n",
+    "        loss.backward()\n",
+    "        optimizer.step()\n",
+    "\n",
+    "        # подсчет ошибки на обучении\n",
+    "        loss = loss.item()\n",
+    "        running_items += len(labels)\n",
+    "        # подсчет метрики на обучении\n",
+    "        pred_labels = torch.squeeze((outputs > th).int())\n",
+    "        running_right += (labels == pred_labels).sum()\n",
+    "        \n",
+    "    # выводим статистику о процессе обучения\n",
+    "    rnn_init.eval()\n",
+    "    \n",
+    "    print(f'Epoch [{epoch + 1}/{epochs}]. ' \\\n",
+    "          f'Step [{i + 1}/{len(train_loader)}]. ' \\\n",
+    "          f'Loss: {loss:.3f}. ' \\\n",
+    "          f'Acc: {running_right / running_items:.3f}', end='. ')\n",
+    "    running_loss, running_items, running_right = 0.0, 0.0, 0.0\n",
+    "    train_loss_history.append(loss)\n",
+    "\n",
+    "    # выводим статистику на тестовых данных\n",
+    "    test_running_right, test_running_total, test_loss = 0.0, 0.0, 0.0\n",
+    "    for j, data in enumerate(val_loader):\n",
+    "        test_labels = data[1].to(device)\n",
+    "        test_outputs = rnn_init(data[0].to(device))\n",
+    "        \n",
+    "        # подсчет ошибки на тесте\n",
+    "        test_loss = criterion(test_outputs, test_labels.float().view(-1, 1))\n",
+    "        # подсчет метрики на тесте\n",
+    "        test_running_total += len(data[1])\n",
+    "        pred_test_labels = torch.squeeze((test_outputs > th).int())\n",
+    "        test_running_right += (test_labels == pred_test_labels).sum()\n",
+    "    \n",
+    "    test_loss_history.append(test_loss.item())\n",
+    "    print(f'Test loss: {test_loss:.3f}. Test acc: {test_running_right / test_running_total:.3f}')\n",
+    "        \n",
+    "print('Training is finished!')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "m91E6Wo7o6lI"
+   },
+   "source": [
+    "# Какие проблемы у рекурентных сетей?\n",
+    "\n",
+    "- затухают градиенты\n",
+    "- медленно, нужно всегда дойти до конца"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "4USjc6V8p5D7"
+   },
+   "source": [
+    "<img src='https://drive.google.com/uc?export=view&id=17VtpKmVwlu0a7UjGbNfT0cjljfpsuKqU' width=800>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "zLeflGiYp5D7"
+   },
+   "source": [
+    "Вот у нас есть рекуррентная сеть. Она дает себе на вход значение на следующем шаге. Когда мы ее тренируем, мы как бы разматываем всю эту систему в одну большую сеть, которая прогоняет все элементы последовательности. И у всех слоев сетей в разные промежутки времени одни и те же веса. Соответсвенно, проходясь обратным распространением по этим сетям все это вместе складываем и применяем. Так происходит обучение.  \n",
+    "\n",
+    "И от этого возникает проблема длинных зависимостей. Т.е. например, то что произошло в начале последовательности, может повлиять на то, что произойдет в конце этой последовательности. Для этого нужно, что бы сигнал во время тренировки протек по длинному пути всей последовательности. А у нас тут очень много матричных умножений на одну и ту же матрицу. Например, у нас 100 таких шагов. Что бы градиент прошел обратно, он будет сто раз умножен на одну и ту же матрицу. И это критично. Т.к. если, например, эта матрица какой-то один сигнал увеличивает чуть. То после того, как оно пройдет 100 раз, сеть этот сигнал сделает огромным. А у нас там tanh, который этот сигнал совсем убьет, т.к. сделает его очень большшим. \n",
+    "\n",
+    "Поэтому в такой простой формулировке, большие последовательности не получается тренировать. И на практике используют другие архитектуры, которые эту проблему решают."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "xsZkNJMnOK5B"
+   },
+   "source": [
+    "<img src='https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Hyperbolic_Tangent.svg/2560px-Hyperbolic_Tangent.svg.png' width=500>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "sDd94jEip5D8"
+   },
+   "source": [
+    "# 2. LSTM. Long Short-Term Memory"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "8fdLf2TNp5D8"
+   },
+   "source": [
+    "[оригинальная статья. 1997](https://www.researchgate.net/publication/13853244_Long_Short-term_Memory)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "Y6EKzzNnp5D9"
+   },
+   "source": [
+    "Автор статьи [Юрген Шмидхубер](https://ru.wikipedia.org/wiki/%D0%A8%D0%BC%D0%B8%D0%B4%D1%85%D1%83%D0%B1%D0%B5%D1%80,_%D0%AE%D1%80%D0%B3%D0%B5%D0%BD). Первая реализации ее случилась только после несколько лет после ее публикации. "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "OlfoNQbCp5D9"
+   },
+   "source": [
+    "[статья](http://colah.github.io/posts/2015-08-Understanding-LSTMs/), которая объясняет что там происходит"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "dX8mgyJHp5D9"
+   },
+   "source": [
+    "[перевод](https://alexsosn.github.io/ml/2015/11/17/LSTM.html) статьи выше"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "OuIfH7rrp5D9"
+   },
+   "source": [
+    "Вот как можно представить схему LSTM:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "AD_UR8Dvp5D-"
+   },
+   "source": [
+    "<img src='https://drive.google.com/uc?export=view&id=1h2F2sb-DgesuXRtLa4GbxH8QI_4swaE7' width=800>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "Pao9YzkVp5D-"
+   },
+   "source": [
+    "Выглядит запутанно. Давайте распутывать.  \n",
+    "\n",
+    "Основная идея.  \n",
+    "\n",
+    "Теперь на каждом шаге мы передаем не один вектор, а два. Один из них (нижний) - это то самый h, который пойдет на вход следующему слою. А кроме этого, мы будем передавать, так называемое self-state. Назовем этот вектор - с. И вот h будет теперь проходить через много нелинейностей, умножаться на матрицы и будет испытывать все те же проблемы, которые мы обсуждали выше.  \n",
+    "\n",
+    "А с будет как можно больше напрямую передаваться из прошлого состояния в следующее. Мы по нему будем очень аккуратно делать апдейты, что бы он очень плавно перетекал из одного состояния в другое.  \n",
+    "\n",
+    "### 2.1 Как это выглядит подробнее:  \n",
+    "\n",
+    "Внутри есть мнгого разных гейтов - некоторый вектор коэффициентов, которые соответсвуют той же размерности что и вход на них.  "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "SDZyDDREtgFF"
+   },
+   "source": [
+    "#### **Forget gate**\n",
+    "\n",
+    "Первый шаг в LSTM - это решить, от какой информации мы хотим избавиться. Это решение принимает слой с сигмоидой, который называется \"forget gate layer.\" (гейт забывания). Он принимает во внимание $h_{t−1}$ и $x_t$, а на выходе даёт значение между 0 и 1 для каждого числа в состоянии ячейки $C_{t−1}$. 1 значит \"полностью сохрани это\", а 0 - \"полностью забудь это\".\n",
+    "\n",
+    "Пример забывания - языковая модель пытается предсказать следующее слово базируясь на предыдущих. Здесь модель может запоминать род объекта, чтобы использовать правильное образование слов. Когда мы видим новый объект, то нужно забыть род предыдущего объекта. *(Животное не переходило дорогу, потому что оно устало)*\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1oYGrHhH6y4_DtwRcKJDjzvYVChPEMblR'>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "sg2XTz8Bu2vq"
+   },
+   "source": [
+    "#### **Input gate**\n",
+    "\n",
+    "Следующий шаг - решить, какую информацию мы должны хранить в состоянии ячейки. Шаг состоит из двух частей. Первая - слой сигмоиды, называемый \"input gate layer\" (входной гейт), который решает какие значения будут обновляться. Вторая - слой с тангенсом, который создает вектор значений $\\tilde{C}_t$, которые будут добавляться к состоянию ячейки. Используем tanh, потому что нам хочется что бы эта добавка могла пойти и в + и в -. \n",
+    "\n",
+    "\n",
+    "С примером языковой модели, мы бы хотели добавлять род нового объекта в состояние ячейки, чтобы заменить старый род, который мы забудем. *(Животное не переходило дорогу, потому что оно устало)*\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1kb4hs0Y1cLb55sl-iRPsxMuNzLlu5qXb'>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "XWAx-0CMwRMP"
+   },
+   "source": [
+    "#### **Update cell state**\n",
+    "\n",
+    "Сейчас самое время, чтобы обновить старое состояние $C_{t−1}$ в новое состояние $C_t$. Предыдущие шаги уже решили, что делать, нужно только сделать это.\n",
+    "\n",
+    "Умножаем старое состояние на $f_t$, тем самым забывая те вещи, которые хотели забыть, затем прибавляем $i_t∗\\tilde{C_t}$. Это новое значение состояния ячейки, которое отмасштабировано в зависимоcти от того, насколько мы хотим обновить новое значение.\n",
+    "\n",
+    "В языковой модели, это момент, где мы выкидываем информацию о роде старого объекта и добавляем новую информацию о роде нового объекта. *(Животное не переходило дорогу, потому что оно устало)*\n",
+    "\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1oKlTuYYRwdnvfMUQW0FjHRWgtHy0xl1M'>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "FuJxpzKLzviM"
+   },
+   "source": [
+    "#### **Output gate**\n",
+    "\n",
+    "Наконец-то нам нужно решить, что мы отправим на выход. Выход будет базироваться на состоянии ячейки, но с небольшой фильтрацией. Во-первых, прогоним входной сигнал через сигмоиду, которая решает с какой силой дальше пропускать сигнал, во-вторых, прогоняем состояние ячейки через тангенс и умножаем это на сигмоиду, чтобы пропускать дальше только то, что мы решили пропустить.\n",
+    "\n",
+    "\n",
+    "Для языковой модели, которая видит только объект, здесь можем пропустить информацию, связанную с глаголом. Например, на выходе может быть полезно число множественной или единственное у объекта, чтобы знать в какую форму нужно поставить глагол. *(Животное не переходило дорогу, потому что оно устало)*\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=12SBxiBO-knE250rVlTxSYkmGWLjzFHL0'>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "x7IX2EGop5EB"
+   },
+   "source": [
+    "Вот так модуль LSTM выглядит в деталях. Зазубривать все это не обязательно. Основная идея зачем мы все это делаем - это бы мы на следующий шаг передавали два вектора. Один из них h в процессе своего формирования прошел через огромное количество нелинейностей, одних и тех же весов и т.д. и по нему градиент идет ни хорошо, ни плохо.  \n",
+    "\n",
+    "Зато у этого С вычисления очень прямолинейные. Т.е. он умножен на какое-то число, которое еще и чаще всего 1, в нему была добавка. А функция + очень хороша для градиента. Вот почему:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "YZvl6VuDp5EB"
+   },
+   "source": [
+    "Вот наш проход с. Вектор с умножается, складывается и идет дальше:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "UsZy1--4p5EC"
+   },
+   "source": [
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1IcyH_3Ab-KenQ8BgHeOrt44CcJ_1Wb_t' width=400>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "XCtQvFm6p5EC"
+   },
+   "source": [
+    "А вот если все это сложить прошлое со следующим. То видим что мы организовали такой некий highway на котором градиент меньше всего затухает.\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1C-EYALdJNO24YPxBhreZv2PitbQFQ73o' width=800>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "YHHwqVeUp5EC"
+   },
+   "source": [
+    "Можно провести аналогию с тем, что происходит на сетях ResNet."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "9hzo6I_kp5EC"
+   },
+   "source": [
+    "Визуализация прохода сигнала по LSTM:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "VKHdgabAp5ED"
+   },
+   "source": [
+    "<img src='https://drive.google.com/uc?export=view&id=1ezEAemVgiEW3POhGjEjIjFdre8I7pri-' width=600>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "dzlCNORAo6lJ"
+   },
+   "outputs": [],
+   "source": [
+    "from torch import nn\n",
+    "\n",
+    "\n",
+    "class LSTMFixedLen(nn.Module) :\n",
+    "    def __init__(self, vocab_size, embedding_dim=128, hidden_dim=128, use_last=True):\n",
+    "        super().__init__()\n",
+    "        self.use_last = use_last\n",
+    "        self.embeddings = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)\n",
+    "        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=2, batch_first=True)\n",
+    "        self.linear = nn.Linear(hidden_dim, 1)\n",
+    "        self.dropout = nn.Dropout(0.2)\n",
+    "        \n",
+    "    def forward(self, x):\n",
+    "        x = self.embeddings(x)\n",
+    "        x = self.dropout(x)\n",
+    "        lstm_out, ht = self.lstm(x)\n",
+    "       \n",
+    "        if self.use_last:\n",
+    "            last_tensor = lstm_out[:,-1,:]\n",
+    "        else:\n",
+    "            # use mean\n",
+    "            last_tensor = torch.mean(lstm_out[:,:], dim=1)\n",
+    "    \n",
+    "        out = self.linear(last_tensor)\n",
+    "        # print(out.shape)\n",
+    "        return torch.sigmoid(out)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "-w2lHWkue64N"
+   },
+   "outputs": [],
+   "source": [
+    "lstm_init = LSTMFixedLen(max_words, 128, 20, use_last=False)\n",
+    "optimizer = torch.optim.Adam(lstm_init.parameters(), lr=0.001)\n",
+    "criterion = nn.BCELoss()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "9PUisoS9w0rH",
+    "outputId": "8ee3b65f-9971-4b05-efbd-da4c6c3fd67b"
+   },
+   "outputs": [],
+   "source": [
+    "print(lstm_init)\n",
+    "print(\"Parameters:\", sum([param.nelement() for param in lstm_init.parameters()]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "qw1Mpj_Co6lJ",
+    "outputId": "5c141d01-34fb-45bb-c314-97d1e6b808d3"
+   },
+   "outputs": [],
+   "source": [
+    "lstm_init = lstm_init.to(device)\n",
+    "lstm_init.train()\n",
+    "th = 0.5\n",
+    "\n",
+    "train_loss_history = []\n",
+    "test_loss_history = []\n",
+    "\n",
+    "\n",
+    "for epoch in range(epochs):  \n",
+    "    lstm_init.train()\n",
+    "    running_items, running_right = 0.0, 0.0\n",
+    "    for i, data in enumerate(train_loader, 0):\n",
+    "        inputs, labels = data[0].to(device), data[1].to(device)\n",
+    "\n",
+    "        # обнуляем градиент\n",
+    "        optimizer.zero_grad()\n",
+    "        outputs = lstm_init(inputs)\n",
+    "        \n",
+    "        loss = criterion(outputs, labels.float().view(-1, 1))\n",
+    "        loss.backward()\n",
+    "        optimizer.step()\n",
+    "\n",
+    "        # подсчет ошибки на обучении\n",
+    "        loss = loss.item()\n",
+    "        running_items += len(labels)\n",
+    "        # подсчет метрики на обучении\n",
+    "        pred_labels = torch.squeeze((outputs > th).int())\n",
+    "        running_right += (labels == pred_labels).sum()\n",
+    "        \n",
+    "    # выводим статистику о процессе обучения\n",
+    "    lstm_init.eval()\n",
+    "    \n",
+    "    print(f'Epoch [{epoch + 1}/{epochs}]. ' \\\n",
+    "            f'Step [{i + 1}/{len(train_loader)}]. ' \\\n",
+    "            f'Loss: {loss:.3f}. ' \\\n",
+    "            f'Acc: {running_right / running_items:.3f}', end='. ')\n",
+    "    running_loss, running_items, running_right = 0.0, 0.0, 0.0\n",
+    "    train_loss_history.append(loss)\n",
+    "\n",
+    "    # выводим статистику на тестовых данных\n",
+    "    test_running_right, test_running_total, test_loss = 0.0, 0.0, 0.0\n",
+    "    for j, data in enumerate(val_loader):\n",
+    "        test_labels = data[1].to(device)\n",
+    "        test_outputs = lstm_init(data[0].to(device))\n",
+    "        \n",
+    "        # подсчет ошибки на тесте\n",
+    "        test_loss = criterion(test_outputs, test_labels.float().view(-1, 1))\n",
+    "        # подсчет метрики на тесте\n",
+    "        test_running_total += len(data[1])\n",
+    "        pred_test_labels = torch.squeeze((test_outputs > th).int())\n",
+    "        test_running_right += (test_labels == pred_test_labels).sum()\n",
+    "    \n",
+    "    test_loss_history.append(test_loss.item())\n",
+    "    print(f'Test loss: {test_loss:.3f}. Test acc: {test_running_right / test_running_total:.3f}')\n",
+    "        \n",
+    "print('Training is finished!')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "t2gbd_Oao6lK"
+   },
+   "source": [
+    "# 3. GRU. Gated Recurrent Unit\n",
+    "\n",
+    "\n",
+    "Какие проблемы всё еще есть с LSTM:\n",
+    "\n",
+    "- вычислительно сложно -> медленнее\n",
+    "- на очень длинных последовательностях все равно затухает градиент\n",
+    "\n",
+    "\n",
+    "Зачем платить больше - уберем некоторые врата (точнее совместим) -> ускоримся, уменьшим число параметров -> GRU"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "3bf-QQq0p5EE"
+   },
+   "source": [
+    "Но какого-то большого выигрыша от этого нет и наиболее часто применяются LSTM. \n",
+    "И GRU:"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "D-w0Ykhnp5EE"
+   },
+   "source": [
+    "<img src='https://drive.google.com/uc?export=view&id=10Q_1hrXcOlpe5WgIq-tuGBScDzaxH_Vl' width=600>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "jtq6UR4co6lK"
+   },
+   "outputs": [],
+   "source": [
+    "from torch import nn\n",
+    "\n",
+    "\n",
+    "class GRUFixedLen(nn.Module) :\n",
+    "    def __init__(self, vocab_size, embedding_dim=128, hidden_dim=128, use_last=True):\n",
+    "        super().__init__()\n",
+    "        self.use_last = use_last\n",
+    "        self.embeddings = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)\n",
+    "        self.gru = nn.GRU(embedding_dim, hidden_dim, num_layers=2, batch_first=True, )\n",
+    "        self.linear = nn.Linear(hidden_dim, 1)\n",
+    "        self.dropout = nn.Dropout(0.2)\n",
+    "        \n",
+    "    def forward(self, x):\n",
+    "        x = self.embeddings(x)\n",
+    "        x = self.dropout(x)\n",
+    "        gru_out, ht = self.gru(x)\n",
+    "       \n",
+    "        if self.use_last:\n",
+    "            last_tensor = gru_out[:,-1,:]\n",
+    "        else:\n",
+    "            # use mean\n",
+    "            last_tensor = torch.mean(gru_out[:,:], dim=1)\n",
+    "    \n",
+    "        out = self.linear(last_tensor)\n",
+    "        return torch.sigmoid(out)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "id": "2ByBMc_5fEo3"
+   },
+   "outputs": [],
+   "source": [
+    "gru_init = GRUFixedLen(max_words, 128, 20, use_last=False)\n",
+    "optimizer = torch.optim.Adam(gru_init.parameters(), lr=0.001)\n",
+    "criterion = nn.BCELoss()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "VkKANTWQx2Yb",
+    "outputId": "61c8436a-09d8-4c34-9b67-8bb8d9b8d979"
+   },
+   "outputs": [],
+   "source": [
+    "print(gru_init)\n",
+    "print(\"Parameters:\", sum([param.nelement() for param in gru_init.parameters()]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "colab": {
+     "base_uri": "https://localhost:8080/"
+    },
+    "id": "B09_p9r5x2Yg",
+    "outputId": "1935b472-e561-4ead-b232-13ffddd27ab4"
+   },
+   "outputs": [],
+   "source": [
+    "gru_init = gru_init.to(device)\n",
+    "gru_init.train()\n",
+    "th = 0.5\n",
+    "\n",
+    "train_loss_history = []\n",
+    "test_loss_history = []\n",
+    "\n",
+    "\n",
+    "for epoch in range(epochs): \n",
+    "    gru_init.train() \n",
+    "    running_items, running_right = 0.0, 0.0\n",
+    "    for i, data in enumerate(train_loader, 0):\n",
+    "        inputs, labels = data[0].to(device), data[1].to(device)\n",
+    "\n",
+    "        # обнуляем градиент\n",
+    "        optimizer.zero_grad()\n",
+    "        outputs = gru_init(inputs)\n",
+    "        \n",
+    "        loss = criterion(outputs, labels.float().view(-1, 1))\n",
+    "        loss.backward()\n",
+    "        optimizer.step()\n",
+    "\n",
+    "        # подсчет ошибки на обучении\n",
+    "        loss = loss.item()\n",
+    "        running_items += len(labels)\n",
+    "        # подсчет метрики на обучении\n",
+    "        pred_labels = torch.squeeze((outputs > th).int())\n",
+    "        running_right += (labels == pred_labels).sum()\n",
+    "        \n",
+    "    # выводим статистику о процессе обучения\n",
+    "    gru_init.eval()\n",
+    "    \n",
+    "    print(f'Epoch [{epoch + 1}/{epochs}]. ' \\\n",
+    "          f'Step [{i + 1}/{len(train_loader)}]. ' \\\n",
+    "          f'Loss: {loss:.3f}. ' \\\n",
+    "          f'Acc: {running_right / running_items:.3f}', end='. ')\n",
+    "    running_loss, running_items, running_right = 0.0, 0.0, 0.0\n",
+    "    train_loss_history.append(loss)\n",
+    "\n",
+    "    # выводим статистику на тестовых данных\n",
+    "    test_running_right, test_running_total, test_loss = 0.0, 0.0, 0.0\n",
+    "    for j, data in enumerate(val_loader):\n",
+    "        test_labels = data[1].to(device)\n",
+    "        test_outputs = gru_init(data[0].to(device))\n",
+    "        \n",
+    "        # подсчет ошибки на тесте\n",
+    "        test_loss = criterion(test_outputs, test_labels.float().view(-1, 1))\n",
+    "        # подсчет метрики на тесте\n",
+    "        test_running_total += len(data[1])\n",
+    "        pred_test_labels = torch.squeeze((test_outputs > th).int())\n",
+    "        test_running_right += (test_labels == pred_test_labels).sum()\n",
+    "    \n",
+    "    test_loss_history.append(test_loss.item())\n",
+    "    print(f'Test loss: {test_loss:.3f}. Test acc: {test_running_right / test_running_total:.3f}')\n",
+    "            \n",
+    "print('Training is finished!')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "ajApsdao66hr"
+   },
+   "source": [
+    "# 4. Интересные концепты"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "VibWuP0jGt4F"
+   },
+   "source": [
+    "## 4.1 Attention"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "TLDjJ2kkH3iK"
+   },
+   "source": [
+    "Примеры из статьи [Google's Neural Machine Translation System: Bridging the Gap between Human and Machine Translation](https://arxiv.org/abs/1609.08144).\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1uOHQX8AnPGKY6HEDOTRJzVxCiKAHLoJy' width=450>\n",
+    "\n",
+    "Нужно сжать всю информацию о предыдущих словах в один блок, который представляет собой внутренний слой - переходное состояние из кодировщика в декодировщика, что очень сложная задача, которая приводит к недообучению.\n",
+    "\n",
+    "И одно из возможных решений - это настакать слои LSTM, один слой LSTM создает вход для другого слоя LSTM:\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1yrBxb5DXZA-LNwNWQdmuF4TNNXqTfNpJ' width=450>\n",
+    "\n",
+    "Но эту вещь очень тяжело обучать, если добавлять всё больше LSTM слоем, то снова встречаемся с проблемой затухающих градиентов, плюсом, всё равно нужно сжимать всю информацию в последние блоки - это наш bottleneck (узкое место, горлышко бутылки) между кодировщик и декодировщиком.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "hY_szeB8KpkH"
+   },
+   "source": [
+    "И решение этой проблемы - Attention слой. Вместо того, чтобы сжимать всю информацию из всех временных ячеек в одно скрытое состояние, можно дать доступ декодировщику ко всей истории. Но получаем очень слишком много информации, которую нужно учитывать, поэтому мы будем обращать свое внимание только на подвыборку этих ячеек.\n",
+    "\n",
+    "Будем учитывать, какая часть предложения на английском языке важна для предсказания слова на французском языке. Подсчет такого распределения достигается получением оценки релевантности каждого слова в предложении для получения нового слова.\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1GAVWyShMSXELaz1f-_e4c9rAeDoJ3QE_' width=450>\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "2CKXDdDGOTB2"
+   },
+   "source": [
+    "**Как использовать эти оценки релевантности?**\n",
+    "\n",
+    "Подсчитываются оценки для каждого скрытого состояния и образуют собой взвешанную сумму внимания. А потом эта сумма передается, как еще один вход в декодировщик.\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1a72Ake6Ai2SdkZ9cQpqmq6-ebjblcQ34' width=450>\n",
+    "\n",
+    "Можно [провизуализировать](https://distill.pub/2016/augmented-rnns/#attentional-interfaces), какое внимание уделяется каждому слову из предложения:\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1OJ4vgTHPxGMzcR8Ob8An--FFUlnZabQ3' width=500>\n",
+    "\n",
+    "А ещё слои внимания можно добавлять и не только к текстам, но и к картинкам.\n",
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1i48NmZMXUneeUwW339tSgvrGU_VvLh9H'>\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "YVZ6r22LPCou"
+   },
+   "source": [
+    "## 4.2 Bidirectional RNN"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "ZvTHVnyWp5EF"
+   },
+   "source": [
+    "Из класса RNN есть еще интересный вариант [Bidirectional RNN](https://maxwell.ict.griffith.edu.au/spl/publications/papers/ieeesp97_schuster.pdf). Они позволяют видеть не только прошлое состояние, но и будущее."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "pSqyTbwPp5EF"
+   },
+   "source": [
+    "\n",
+    "<img src='https://drive.google.com/uc?export=view&id=1kCGsUWhUjIoIAquvE7FjaAbYjAQdsyW7' width=550>\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "AmvdkWZ9p5EF"
+   },
+   "source": [
+    "Общая идея: на каждом шаге есть и прямой проход и обратный. И векторы которые несут информацию из прошлого и будущего конкатенируются вместе и идут на выход с сети."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {
+    "id": "gJ_nFIPr3CBR"
+   },
+   "source": [
+    "# Домашнее задание\n",
+    "\n",
+    "1. Попробуйте обучить нейронную сеть GRU/LSTM для предсказания сентимента сообщений с твитера на примере https://www.kaggle.com/datasets/arkhoshghalb/twitter-sentiment-analysis-hatred-speech\n",
+    "\n",
+    "2. Опишите, какой результат вы получили? Что помогло вам улучшить ее точность?\n",
+    "\n",
+    "У кого нет возможности работать через каггл (нет верификации), то можете данные взять по ссылке: https://disk.yandex.ru/d/LV1cYS1orMyRWA\n",
+    "\n",
+    "\n",
+    "* пунктуация\n",
+    "* Начальные состояния для скрытого слова "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "accelerator": "GPU",
+  "colab": {
+   "provenance": [],
+   "toc_visible": true
+  },
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.15"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 1
+}
